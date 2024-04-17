@@ -1212,11 +1212,13 @@ void wifi_manager( void * pvParameters ){
 						 * This way we avoid restarting the AP directly in case the connection is mementarily lost */
 						if(retries < WIFI_MANAGER_MAX_RETRY_START_AP){
 							retries++;
-													}
+							ESP_LOGI(TAG, "Reconnection attempt %d/%d", retries, WIFI_MANAGER_MAX_RETRY_START_AP);
+						}
 						else{
 							/* In this scenario the connection was lost beyond repair: kick start the AP! */
 							retries = 0;
-							
+							ESP_LOGI(TAG, "Reconnection attempt %d/%d failed, kick start the AP!", WIFI_MANAGER_MAX_RETRY_START_AP, WIFI_MANAGER_MAX_RETRY_START_AP);
+
 							/* start SoftAP */
 							wifi_manager_send_message(WM_ORDER_START_AP, NULL);
 						}
