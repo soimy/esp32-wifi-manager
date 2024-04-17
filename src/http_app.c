@@ -427,6 +427,7 @@ void http_app_start(bool lru_purge_enable){
 		 * We could register all URLs one by one, but this would not work while the fake DNS is active */
 		config.uri_match_fn = httpd_uri_match_wildcard;
 		config.lru_purge_enable = lru_purge_enable;
+		config.max_open_sockets = 2;
 
 		/* generate the URLs */
 		if(http_root_url == NULL){
