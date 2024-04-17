@@ -149,7 +149,7 @@ const int WIFI_MANAGER_REQUEST_DISCONNECT_BIT = BIT8;
 
 void wifi_manager_timer_retry_cb( TimerHandle_t xTimer ){
 
-	ESP_LOGI(TAG, "Retry Timer Tick! Sending ORDER_CONNECT_STA with reason CONNECTION_REQUEST_AUTO_RECONNECT");
+	// ESP_LOGI(TAG, "Retry Timer Tick! Sending ORDER_CONNECT_STA with reason CONNECTION_REQUEST_AUTO_RECONNECT");
 
 	/* stop the timer */
 	xTimerStop( xTimer, (TickType_t) 0 );
@@ -1212,11 +1212,11 @@ void wifi_manager( void * pvParameters ){
 						 * This way we avoid restarting the AP directly in case the connection is mementarily lost */
 						if(retries < WIFI_MANAGER_MAX_RETRY_START_AP){
 							retries++;
-						}
+													}
 						else{
 							/* In this scenario the connection was lost beyond repair: kick start the AP! */
 							retries = 0;
-
+							
 							/* start SoftAP */
 							wifi_manager_send_message(WM_ORDER_START_AP, NULL);
 						}
