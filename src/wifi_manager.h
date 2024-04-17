@@ -33,6 +33,7 @@ Contains the freeRTOS task and all necessary support
 #define WIFI_MANAGER_H_INCLUDED
 
 #include <stdbool.h>
+#include "esp_wifi.h"
 
 
 #ifdef __cplusplus
@@ -80,6 +81,12 @@ extern "C" {
  * Defines the time (in ms) to wait after a succesful connection before shutting down the access point.
  */
 #define WIFI_MANAGER_SHUTDOWN_AP_TIMER		CONFIG_WIFI_MANAGER_SHUTDOWN_AP_TIMER
+
+/**
+ * @brief Time (in ms) to wait before scan attempts
+ * Defines the time (in ms) to wait after failure before trying to start a scan again.
+ */
+#define WIFI_MANAGER_SCAN_RETRY				( 500 )
 
 
 /** @brief Defines the task priority of the wifi_manager.
