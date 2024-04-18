@@ -1236,6 +1236,7 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_CONNECT_STA:
+				;bool skip_request = false;
 				/* very important: precise that this connection attempt is specifically requested.
 				 * Param in that case is a boolean indicating if the request was made automatically
 				 * by the wifi_manager.
@@ -1244,7 +1245,7 @@ void wifi_manager_task( void * pvParameters ){
 					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: USER )");
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_STA_CONNECT_BIT);
 
-					if(!(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS))
+					if( !(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS) )
 					{
 						/* Copy saved SSID/password and into the STA config.
 						 * This is only safe to do if there isn't a connection is progress. */
@@ -1255,15 +1256,31 @@ void wifi_manager_task( void * pvParameters ){
 					}
 				}
 				else if((BaseType_t)msg.param == CONNECTION_REQUEST_RESTORE_CONNECTION) {
-					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: RESTORE_CONNECTION )");
-					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_RESTORE_STA_BIT);
+					if( !(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS) ){
+						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_RESTORE_STA_BIT);
+					}
+					else {
+						/* Attempting to restore a connection while another connection attempt is
+						 * in progress, just skip the restore attempt - the only time this happens
+						 * is if the user is trying to connect to a new wifi AP. In that case
+						 * we want to stop trying to restore a connection to the old one. */
+						skip_request = true;
+					}
 				}
 				else if((BaseType_t)msg.param == CONNECTION_REQUEST_AUTO_RECONNECT) {
-					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: AUTO_RECONNECT )");
+					if( xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS ){
+						/* Attempting to restore a connection while another connection attempt is
+						 * in progress, just skip the restore attempt. */
+						skip_request = true;
+					}
+				}
+
+				if (skip_request) {
+					ESP_LOGI(TAG, "Connection request skipped");
 				}
 
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
-				if( ! (uxBits & WIFI_MANAGER_WIFI_CONNECTED_BIT) ){
+				if( ! skip_request && ! (uxBits & WIFI_MANAGER_WIFI_CONNECTED_BIT) ){
 					/* update config to latest and attempt connection */
 					ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, wifi_manager_get_wifi_sta_config()));
 
@@ -1280,6 +1297,7 @@ void wifi_manager_task( void * pvParameters ){
 						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DEFERRED_CONNECT);
 					}
 					else{
+						ESP_LOGI(TAG, "Attempting to connect - call esp_wifi_connect()");
 						ESP_ERROR_CHECK(esp_wifi_connect());
 						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
 					}
@@ -1360,7 +1378,7 @@ void wifi_manager_task( void * pvParameters ){
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 				if( uxBits & WIFI_MANAGER_REQUEST_DEFERRED_CONNECT )
 				{
-					ESP_LOGI(TAG, "Doing deferred connect");
+					ESP_LOGI(TAG, "Doing deferred connect to SSID: \"%s\"", connect_request_ssid);
 					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DEFERRED_CONNECT);
 					/* Copy saved SSID/password and into the STA config. */
 					wifi_config_t *config = wifi_manager_get_wifi_sta_config();
