@@ -675,7 +675,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * SYSTEM_EVENT_STA_DISCONNECTED event will be posted when esp_wifi_stop()
 		 * is called and the STA disconnects. But at this point wifi_manager_event_group
 		 * has been freed. */
-		ESP_LOGW(TAG, "wifi_manager_event_handler got an event when event group has been freed");
+		ESP_LOGW(TAG, "WiFi Event Handler: ( Event: got an event when event group has been freed )");
 		return;
 	}
 
@@ -686,7 +686,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		/* The Wi-Fi driver will never generate this event, which, as a result, can be ignored by the application event
 		 * callback. This event may be removed in future releases. */
 		case WIFI_EVENT_WIFI_READY:
-			ESP_LOGI(TAG, "WIFI_EVENT_WIFI_READY");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_WIFI_READY )");
 			break;
 
 		/* The scan-done event is triggered by esp_wifi_scan_start() and will arise in the following scenarios:
@@ -702,7 +702,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 			the Wi-Fi driver to free the internal memory which is allocated during the scan (do not forget to do this)!
 		 */
 		case WIFI_EVENT_SCAN_DONE:
-			ESP_LOGD(TAG, "WIFI_EVENT_SCAN_DONE");
+			ESP_LOGD(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_SCAN_DONE )");
 	    	xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_SCAN_BIT);
 			wifi_event_sta_scan_done_t* event_sta_scan_done = (wifi_event_sta_scan_done_t*)malloc(sizeof(wifi_event_sta_scan_done_t));
 			*event_sta_scan_done = *((wifi_event_sta_scan_done_t*)event_data);
@@ -713,7 +713,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * arise. Upon receiving this event, the event task will initialize the LwIP network interface (netif).
 		 * Generally, the application event callback needs to call esp_wifi_connect() to connect to the configured AP. */
 		case WIFI_EVENT_STA_START:
-			ESP_LOGI(TAG, "");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_STA_START )");
 			break;
 
 		/* If esp_wifi_stop() returns ESP_OK and the current Wi-Fi mode is Station or AP+Station, then this event will arise.
@@ -721,7 +721,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * TCP/UDP-related connections and clear the LwIP station netif, etc. The application event callback generally does
 		 * not need to do anything. */
 		case WIFI_EVENT_STA_STOP:
-			ESP_LOGI(TAG, "WIFI_EVENT_STA_STOP");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_STA_STOP )");
 			break;
 
 		/* If esp_wifi_connect() returns ESP_OK and the station successfully connects to the target AP, the connection event
@@ -730,7 +730,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * the application work, provided that the application does not depend on LwIP, namely the IP address. However, if
 		 * the application is LwIP-based, then you need to wait until the got ip event comes in. */
 		case WIFI_EVENT_STA_CONNECTED:
-			ESP_LOGI(TAG, "WIFI_EVENT_STA_CONNECTED");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_STA_CONNECTED )");
 			/* this current connection attempt has ended in success */
 			xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
 			break;
@@ -780,7 +780,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * connection only fails temporarily and recovers very quickly. The application can enable “Keep TCP connections when
 		 * IP changed” via LwIP menuconfig.*/
 		case WIFI_EVENT_STA_DISCONNECTED:
-			ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_STA_DISCONNECTED )");
 
 			wifi_event_sta_disconnected_t* wifi_event_sta_disconnected = (wifi_event_sta_disconnected_t*)malloc(sizeof(wifi_event_sta_disconnected_t));
 			*wifi_event_sta_disconnected =  *( (wifi_event_sta_disconnected_t*)event_data );
@@ -796,11 +796,11 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * to WPA. Upon receiving this event, the event task will do nothing. Generally, the application event callback does
 		 * not need to handle this either. */
 		case WIFI_EVENT_STA_AUTHMODE_CHANGE:
-			ESP_LOGI(TAG, "WIFI_EVENT_STA_AUTHMODE_CHANGE");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_STA_AUTHMODE_CHANGE )");
 			break;
 
 		case WIFI_EVENT_AP_START:
-			ESP_LOGI(TAG, "WIFI_EVENT_AP_START");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_AP_START )");
 			xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_AP_STARTED_BIT);
 			break;
 
@@ -813,7 +813,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * event, the event task will do nothing, and the application callback can also ignore it. However, you may want
 		 * to do something, for example, to get the info of the connected STA, etc. */
 		case WIFI_EVENT_AP_STACONNECTED:
-			ESP_LOGI(TAG, "WIFI_EVENT_AP_STACONNECTED");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_AP_STACONNECTED )");
 			break;
 
 		/* This event can happen in the following scenarios:
@@ -823,13 +823,13 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * When this event happens, the event task will do nothing, but the application event callback needs to do
 		 * something, e.g., close the socket which is related to this station, etc. */
 		case WIFI_EVENT_AP_STADISCONNECTED:
-			ESP_LOGI(TAG, "WIFI_EVENT_AP_STADISCONNECTED");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_AP_STADISCONNECTED )");
 			break;
 
 		/* This event is disabled by default. The application can enable it via API esp_wifi_set_event_mask().
 		 * When this event is enabled, it will be raised each time the AP receives a probe request. */
 		case WIFI_EVENT_AP_PROBEREQRECVED:
-			ESP_LOGI(TAG, "WIFI_EVENT_AP_PROBEREQRECVED");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: WIFI_EVENT_AP_PROBEREQRECVED )");
 			break;
 
 		} /* end switch */
@@ -850,7 +850,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * IPV4 will become abnormal. Upon receiving this event, the application needs to close all sockets and recreate
 		 * the application when the IPV4 changes to a valid one. */
 		case IP_EVENT_STA_GOT_IP:
-			ESP_LOGI(TAG, "IP_EVENT_STA_GOT_IP");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: IP_EVENT_STA_GOT_IP )");
 	        xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_WIFI_CONNECTED_BIT);
 	        ip_event_got_ip_t* ip_event_got_ip = (ip_event_got_ip_t*)malloc(sizeof(ip_event_got_ip_t));
 			*ip_event_got_ip =  *( (ip_event_got_ip_t*)event_data );
@@ -860,7 +860,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		/* This event arises when the IPV6 SLAAC support auto-configures an address for the ESP32, or when this address changes.
 		 * The event means that everything is ready and the application can begin its tasks (e.g., creating sockets). */
 		case IP_EVENT_GOT_IP6:
-			ESP_LOGI(TAG, "IP_EVENT_GOT_IP6");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: IP_EVENT_GOT_IP6 )");
 			break;
 
 		/* This event arises when the IPV4 address become invalid.
@@ -870,7 +870,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * Generally the application don’t need to care about this event, it is just a debug event to let the application
 		 * know that the IPV4 address is lost. */
 		case IP_EVENT_STA_LOST_IP:
-			ESP_LOGI(TAG, "IP_EVENT_STA_LOST_IP");
+			ESP_LOGI(TAG, "WiFi Event Handler: ( Event: IP_EVENT_STA_LOST_IP )");
 			break;
 
 		}
@@ -1066,6 +1066,24 @@ esp_netif_t* wifi_manager_get_esp_netif_sta(){
 	return esp_netif_sta;
 }
 
+const char* wifi_manager_state_str[WM_MESSAGE_CODE_COUNT] = {
+	[NONE                          ]  =  "NONE",
+	[WM_ORDER_START_HTTP_SERVER    ]  =  "START_HTTP_SERVER",
+	[WM_ORDER_STOP_HTTP_SERVER     ]  =  "STOP_HTTP_SERVER",
+	[WM_ORDER_START_DNS_SERVICE    ]  =  "START_DNS_SERVICE",
+	[WM_ORDER_STOP_DNS_SERVICE     ]  =  "STOP_DNS_SERVICE",
+	[WM_ORDER_START_WIFI_SCAN      ]  =  "START_WIFI_SCAN",
+	[WM_ORDER_LOAD_AND_RESTORE_STA ]  =  "LOAD_AND_RESTORE_STA",
+	[WM_ORDER_CONNECT_STA          ]  =  "CONNECT_STA",
+	[WM_ORDER_DISCONNECT_STA       ]  =  "DISCONNECT_STA",
+	[WM_ORDER_START_AP             ]  =  "START_AP",
+	[WM_EVENT_STA_DISCONNECTED     ]  =  "STA_DISCONNECTED",
+	[WM_EVENT_SCAN_DONE            ]  =  "SCAN_DONE",
+	[WM_EVENT_STA_GOT_IP           ]  =  "STA_GOT_IP",
+	[WM_ORDER_STOP_AP              ]  =  "STOP_AP",
+	[WM_ORDER_EXIT                 ]  =  "EXIT"
+};
+
 void wifi_manager_task( void * pvParameters ){
 
 
@@ -1148,8 +1166,12 @@ void wifi_manager_task( void * pvParameters ){
 	{
 		xStatus = xQueueReceive( wifi_manager_queue, &msg, portMAX_DELAY );
 
-		if( xStatus == pdPASS ){
-			switch(msg.code){
+		if( xStatus == pdPASS )
+		{
+			ESP_LOGI(TAG, "WiFi Manager Task:  [ Current state: %s ]", wifi_manager_state_str[msg.code]);
+
+			switch(msg.code)
+			{
 
 			case WM_EVENT_SCAN_DONE:{
 				wifi_event_sta_scan_done_t *evt_scan_done = (wifi_event_sta_scan_done_t*)msg.param;
@@ -1178,8 +1200,6 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_START_WIFI_SCAN:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_START_WIFI_SCAN");
-
 				/* if a scan is already in progress this message is simply ignored thanks to the WIFI_MANAGER_SCAN_BIT uxBit */
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 				if(! (uxBits & WIFI_MANAGER_SCAN_BIT) ){
@@ -1198,7 +1218,6 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_LOAD_AND_RESTORE_STA:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_LOAD_AND_RESTORE_STA");
 				if(wifi_manager_fetch_wifi_sta_config()){
 					ESP_LOGI(TAG, "Saved wifi found on startup. Will attempt to connect.");
 					wifi_manager_send_message(WM_ORDER_CONNECT_STA, (void*)CONNECTION_REQUEST_RESTORE_CONNECTION);
@@ -1217,13 +1236,12 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_CONNECT_STA:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_CONNECT_STA");
-
 				/* very important: precise that this connection attempt is specifically requested.
 				 * Param in that case is a boolean indicating if the request was made automatically
 				 * by the wifi_manager.
 				 * */
 				if((BaseType_t)msg.param == CONNECTION_REQUEST_USER) {
+					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: USER )");
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_STA_CONNECT_BIT);
 
 					if(!(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS))
@@ -1237,7 +1255,11 @@ void wifi_manager_task( void * pvParameters ){
 					}
 				}
 				else if((BaseType_t)msg.param == CONNECTION_REQUEST_RESTORE_CONNECTION) {
+					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: RESTORE_CONNECTION )");
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_RESTORE_STA_BIT);
+				}
+				else if((BaseType_t)msg.param == CONNECTION_REQUEST_AUTO_RECONNECT) {
+					ESP_LOGI(TAG, "WiFi Manager task:  ( Connection request: AUTO_RECONNECT )");
 				}
 
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
@@ -1270,7 +1292,7 @@ void wifi_manager_task( void * pvParameters ){
 
 			case WM_EVENT_STA_DISCONNECTED:
 				;wifi_event_sta_disconnected_t* wifi_event_sta_disconnected = (wifi_event_sta_disconnected_t*)msg.param;
-				ESP_LOGI(TAG, "MESSAGE: EVENT_STA_DISCONNECTED with Reason code: %d", wifi_event_sta_disconnected->reason);
+				ESP_LOGI(TAG, "WiFi Manager task:  ( Reason code: %d )", wifi_event_sta_disconnected->reason);
 
 				/* this even can be posted in numerous different conditions
 				 *
@@ -1427,8 +1449,6 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_START_AP:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_START_AP");
-
 				/* Check if AP is inactive and start it */
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 				if(! (uxBits & WIFI_MANAGER_AP_STARTED_BIT) ){
@@ -1448,9 +1468,6 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_STOP_AP:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_STOP_AP");
-
-
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 
 				/* before stopping the AP, we check that we are still connected. There's a chance that once the timer
@@ -1475,8 +1492,7 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_EVENT_STA_GOT_IP:
-				ESP_LOGI(TAG, "WM_EVENT_STA_GOT_IP");
-				ip_event_got_ip_t* ip_event_got_ip = (ip_event_got_ip_t*)msg.param; 
+				;ip_event_got_ip_t* ip_event_got_ip = (ip_event_got_ip_t*)msg.param; 
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 
 				/* reset connection requests bits -- doesn't matter if it was set or not */
@@ -1535,8 +1551,6 @@ void wifi_manager_task( void * pvParameters ){
 				break;
 
 			case WM_ORDER_DISCONNECT_STA:
-				ESP_LOGI(TAG, "MESSAGE: ORDER_DISCONNECT_STA");
-
 				/* precise this is coming from a user request */
 				xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DISCONNECT_BIT);
 
