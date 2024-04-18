@@ -83,6 +83,7 @@ SemaphoreHandle_t wifi_manager_json_mutex = NULL;
 SemaphoreHandle_t wifi_manager_sta_ip_mutex = NULL;
 /* Mutex for gracefully exiting WiFi Manager */
 SemaphoreHandle_t wifi_manager_event_loop_mutex = NULL;
+
 /* Shared resource: wifi_manager_sta_ip string */
 char *wifi_manager_sta_ip = NULL;
 uint16_t ap_num = MAX_AP_NUM;
@@ -106,6 +107,11 @@ static esp_netif_t* esp_netif_sta = NULL;
 
 /* @brief netif object for the ACCESS POINT */
 static esp_netif_t* esp_netif_ap = NULL;
+
+/** SSID of connection  requested using wifi_manager_connect_async(). */
+static char connect_request_ssid[MAX_SSID_SIZE + 1];
+/** Password of connection  requested using wifi_manager_connect_async(). */
+static char connect_request_password[MAX_PASSWORD_SIZE + 1];
 
 /**
  * The actual WiFi settings in use
@@ -150,6 +156,12 @@ const int WIFI_MANAGER_SCAN_BIT = BIT7;
 
 /* @brief When set, means user requested for a disconnect */
 const int WIFI_MANAGER_REQUEST_DISCONNECT_BIT = BIT8;
+
+/* @brief When set, means a connection attempt is in progress */
+const int WIFI_MANAGER_CONNECT_IN_PROGRESS = BIT9;
+
+/* @brief When set, means a deferred connect has been requested */
+const int WIFI_MANAGER_REQUEST_DEFERRED_CONNECT = BIT10;
 
 
 /* Prototypes */
@@ -206,9 +218,9 @@ void wifi_manager_init(){
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
 
 	esp_netif_sta = esp_netif_create_default_wifi_sta();
-	assert(esp_netif_sta);
+assert(esp_netif_sta);
 	esp_netif_ap = esp_netif_create_default_wifi_ap();
-	assert(esp_netif_ap);
+assert(esp_netif_ap);
 
 	/* default wifi config */
 	wifi_init_config_t wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
@@ -719,7 +731,9 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 		 * the application is LwIP-based, then you need to wait until the got ip event comes in. */
 		case WIFI_EVENT_STA_CONNECTED:
 			ESP_LOGI(TAG, "WIFI_EVENT_STA_CONNECTED");
-						break;
+			/* this current connection attempt has ended in success */
+			xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
+			break;
 
 		/* This event can be generated in the following scenarios:
 		 *
@@ -870,7 +884,9 @@ wifi_config_t* wifi_manager_get_wifi_sta_config(){
 }
 
 
-void wifi_manager_connect_async(){
+void wifi_manager_connect_async(const char *ssid, const char *password){
+	size_t len;
+
 	/* in order to avoid a false positive on the front end app we need to quickly flush the ip json
 	 * There'se a risk the front end sees an IP or a password error when in fact
 	 * it's a remnant from a previous connection
@@ -879,8 +895,26 @@ void wifi_manager_connect_async(){
 		wifi_manager_clear_ip_info_json();
 		wifi_manager_unlock_json_buffer();
 	}
-	wifi_manager_send_message(WM_ORDER_CONNECT_STA, (void*)CONNECTION_REQUEST_USER);
+	/* Save requested SSID as the connection request might possibly be deferred */
+	memset(connect_request_ssid, 0, sizeof(connect_request_ssid));
+	len = strlen(ssid);
+	if (len > MAX_SSID_SIZE){
+		len = MAX_SSID_SIZE;
 	}
+	memcpy(connect_request_ssid, ssid, len);
+	connect_request_ssid[len] = 0; // null-terminate
+
+	/* Save requested password */
+	memset(connect_request_password, 0, sizeof(connect_request_password));
+	len = strlen(password);
+	if (len > MAX_PASSWORD_SIZE){
+		len = MAX_PASSWORD_SIZE;
+	}
+	memcpy(connect_request_password, password, len);
+	connect_request_password[len] = 0; // null-terminate
+	
+	wifi_manager_send_message(WM_ORDER_CONNECT_STA, (void*)CONNECTION_REQUEST_USER);
+}
 
 
 char* wifi_manager_get_ip_info_json(){
@@ -1041,7 +1075,7 @@ void wifi_manager_task( void * pvParameters ){
 #ifdef CONFIG_WIFI_MANAGER_AUTOSTART_AP
 	uint8_t	retries = 0;
 #endif // CONFIG_WIFI_MANAGER_AUTOSTART_AP
-
+	
 	/* gracefully exit wifi manager flag */
 	bool wifi_manager_exit = false;
 
@@ -1191,7 +1225,17 @@ void wifi_manager_task( void * pvParameters ){
 				 * */
 				if((BaseType_t)msg.param == CONNECTION_REQUEST_USER) {
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_STA_CONNECT_BIT);
-									}
+
+					if(!(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS))
+					{
+						/* Copy saved SSID/password and into the STA config.
+						 * This is only safe to do if there isn't a connection is progress. */
+						wifi_config_t *config = wifi_manager_get_wifi_sta_config();
+						memset(config, 0x00, sizeof(wifi_config_t));
+						memcpy(config->sta.ssid, connect_request_ssid, MAX_SSID_SIZE);
+						memcpy(config->sta.password, connect_request_password, MAX_PASSWORD_SIZE);
+					}
+				}
 				else if((BaseType_t)msg.param == CONNECTION_REQUEST_RESTORE_CONNECTION) {
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_RESTORE_STA_BIT);
 				}
@@ -1206,7 +1250,17 @@ void wifi_manager_task( void * pvParameters ){
 					if(uxBits & WIFI_MANAGER_SCAN_BIT){
 						esp_wifi_scan_stop();
 					}
-					ESP_ERROR_CHECK(esp_wifi_connect());
+					/* if there is an existing connection attempt in progress,
+					 * defer the call to esp_wifi_connect(), otherwise a crash
+					 * will happen. */
+					if(uxBits & WIFI_MANAGER_CONNECT_IN_PROGRESS){
+						ESP_LOGI(TAG, "Connect in progress, deferring call to esp_wifi_connect()");
+						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DEFERRED_CONNECT);
+					}
+					else{
+						ESP_ERROR_CHECK(esp_wifi_connect());
+						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
+					}
 				}
 
 				/* callback */
@@ -1270,6 +1324,9 @@ void wifi_manager_task( void * pvParameters ){
 				 *
 				 * */
 
+				/* this current connection attempt has ended in failure */
+				xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
+
 				/* reset saved sta IP */
 				wifi_manager_safe_update_sta_ip_string((uint32_t)0);
 
@@ -1279,7 +1336,25 @@ void wifi_manager_task( void * pvParameters ){
 				}
 
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
-				if( uxBits & WIFI_MANAGER_REQUEST_STA_CONNECT_BIT ){
+				if( uxBits & WIFI_MANAGER_REQUEST_DEFERRED_CONNECT )
+				{
+					ESP_LOGI(TAG, "Doing deferred connect");
+					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DEFERRED_CONNECT);
+					/* Copy saved SSID/password and into the STA config. */
+					wifi_config_t *config = wifi_manager_get_wifi_sta_config();
+					memset(config, 0x00, sizeof(wifi_config_t));
+					memcpy(config->sta.ssid, connect_request_ssid, MAX_SSID_SIZE);
+					memcpy(config->sta.password, connect_request_password, MAX_PASSWORD_SIZE);
+					/* esp_wifi_set_config() must be called before doing the deferred connect, otherwise
+					 * if the previous (failed) connection attempt was to the same AP, then the
+					 * deferred connect will fail with reason 205 (WIFI_REASON_CONNECTION_FAIL) due
+					 * to that AP being on the blacklist. */
+					ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, wifi_manager_get_wifi_sta_config()));
+					ESP_ERROR_CHECK(esp_wifi_connect());
+					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_CONNECT_IN_PROGRESS);
+				}
+				else if( uxBits & WIFI_MANAGER_REQUEST_STA_CONNECT_BIT )
+				{
 					/* there are no retries when it's a user requested connection by design. This avoids a user hanging too much
 					 * in case they typed a wrong password for instance. Here we simply clear the request bit and move on */
 					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_STA_CONNECT_BIT);
@@ -1290,7 +1365,8 @@ void wifi_manager_task( void * pvParameters ){
 					}
 
 				}
-				else if (uxBits & WIFI_MANAGER_REQUEST_DISCONNECT_BIT){
+				else if (uxBits & WIFI_MANAGER_REQUEST_DISCONNECT_BIT)
+				{
 					/* user manually requested a disconnect so the lost connection is a normal event. Clear the flag and restart the AP */
 					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_DISCONNECT_BIT);
 
@@ -1308,7 +1384,8 @@ void wifi_manager_task( void * pvParameters ){
 					wifi_manager_send_message(WM_ORDER_START_AP, NULL);
 #endif // CONFIG_WIFI_MANAGER_AUTOSTART_AP
 				}
-				else{
+				else
+				{
 					/* lost connection ? */
 					if(wifi_manager_lock_json_buffer( portMAX_DELAY )){
 						wifi_manager_generate_ip_info_json( UPDATE_LOST_CONNECTION );
@@ -1329,12 +1406,12 @@ void wifi_manager_task( void * pvParameters ){
 						 * This way we avoid restarting the AP directly in case the connection is mementarily lost */
 						if(retries < WIFI_MANAGER_MAX_RETRY_START_AP){
 							retries++;
-ESP_LOGI(TAG, "Reconnection attempt %d/%d", retries, WIFI_MANAGER_MAX_RETRY_START_AP);
+							ESP_LOGI(TAG, "Reconnection attempt %d/%d", retries, WIFI_MANAGER_MAX_RETRY_START_AP);
 						}
 						else{
 							/* In this scenario the connection was lost beyond repair: kick start the AP! */
 							retries = 0;
-ESP_LOGI(TAG, "Reconnection attempt %d/%d failed, kick start the AP!", WIFI_MANAGER_MAX_RETRY_START_AP, WIFI_MANAGER_MAX_RETRY_START_AP);
+							ESP_LOGI(TAG, "Reconnection attempt %d/%d failed, kick start the AP!", WIFI_MANAGER_MAX_RETRY_START_AP, WIFI_MANAGER_MAX_RETRY_START_AP);
 
 							/* start SoftAP */
 							wifi_manager_send_message(WM_ORDER_START_AP, NULL);

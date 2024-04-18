@@ -345,7 +345,7 @@ wifi_config_t* wifi_manager_get_wifi_sta_config();
 /**
  * @brief requests a connection to an access point that will be process in the main task thread.
  */
-void wifi_manager_connect_async();
+void wifi_manager_connect_async(const char *ssid, const char *password);
 
 /**
  * @brief requests a wifi scan
