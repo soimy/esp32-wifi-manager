@@ -81,6 +81,12 @@ extern "C" {
  */
 #define WIFI_MANAGER_SHUTDOWN_AP_TIMER		CONFIG_WIFI_MANAGER_SHUTDOWN_AP_TIMER
 
+/**
+ * @brief Time (in ms) to wait before scan attempts
+ * Defines the time (in ms) to wait after failure before trying to start a scan again.
+ */
+#define WIFI_MANAGER_SCAN_RETRY				( 500 )
+
 
 /** @brief Defines the task priority of the wifi_manager.
  *
@@ -217,7 +223,8 @@ typedef enum message_code_t {
 	WM_EVENT_SCAN_DONE = 11,
 	WM_EVENT_STA_GOT_IP = 12,
 	WM_ORDER_STOP_AP = 13,
-	WM_MESSAGE_CODE_COUNT = 14 /* important for the callback array */
+	WM_ORDER_EXIT = 14,
+	WM_MESSAGE_CODE_COUNT = 15 /* important for the callback array */
 
 }message_code_t;
 
@@ -277,6 +284,10 @@ esp_netif_t* wifi_manager_get_esp_netif_sta();
  */
 esp_netif_t* wifi_manager_get_esp_netif_ap();
 
+/**
+ * This must be called before wifi_manager_start() but it only needs to be called once
+ */
+void wifi_manager_init();
 
 /**
  * Allocate heap memory for the wifi manager and start the wifi_manager RTOS task
@@ -296,7 +307,7 @@ void filter_unique( wifi_ap_record_t * aplist, uint16_t * ap_num);
 /**
  * Main task for the wifi_manager
  */
-void wifi_manager( void * pvParameters );
+void wifi_manager_task( void * pvParameters );
 
 
 char* wifi_manager_get_ap_list_json();
@@ -307,9 +318,20 @@ void wifi_manager_scan_async();
 
 
 /**
+ * @brief Erases the current STA wifi config in flash storage.
+ */
+esp_err_t wifi_manager_erase_sta_config();
+
+/**
  * @brief saves the current STA wifi config to flash ram storage.
  */
 esp_err_t wifi_manager_save_sta_config();
+
+/**
+ * @brief check if a STA wifi config is in the flash ram storage.
+ * @return true if a previously saved config was found, false otherwise.
+ */
+bool wifi_manager_wifi_sta_config_exists();
 
 /**
  * @brief fetch a previously STA wifi config in the flash ram storage.
@@ -323,7 +345,7 @@ wifi_config_t* wifi_manager_get_wifi_sta_config();
 /**
  * @brief requests a connection to an access point that will be process in the main task thread.
  */
-void wifi_manager_connect_async();
+void wifi_manager_connect_async(const char *ssid, const char *password);
 
 /**
  * @brief requests a wifi scan
@@ -409,6 +431,23 @@ void wifi_manager_set_callback(message_code_t message_code, void (*func_ptr)(voi
 
 BaseType_t wifi_manager_send_message(message_code_t code, void *param);
 BaseType_t wifi_manager_send_message_to_front(message_code_t code, void *param);
+
+/**
+ * @brief Start AP (if not already started).
+ * @return ESP_ON on success and ESP_FAIL on failure 
+ */
+esp_err_t wifi_manager_start_ap(void);
+
+/**
+ * @brief Get AP SSID.
+ */
+const char *wifi_manager_get_ap_ssid(void);
+
+/**
+ * @brief Get AP password.
+ */
+const char *wifi_manager_get_ap_password(void);
+
 
 #ifdef __cplusplus
 }
