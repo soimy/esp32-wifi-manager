@@ -538,42 +538,64 @@ bool wifi_manager_saved_wifi_scan(wifi_ap_record_t *ap)
 	nvs_handle handle;
 	esp_err_t esp_err;
 	bool exists = false;
-	ap_config_t saved_networks[CONFIG_WIFI_MAX_AP_CONFIGS] = {0};
-	size_t sz;
+	// use static to cache the saved networks
+	static ap_config_t saved_networks[CONFIG_WIFI_MAX_AP_CONFIGS] = {0};
+	static size_t sz = SIZE_MAX; // uninitialized on first run
 
-	if (nvs_sync_lock(portMAX_DELAY))
+	// only read NVS once, next time use cached data
+	if (sz == SIZE_MAX) 
 	{
-		esp_err = nvs_open(wifi_manager_nvs_namespace, NVS_READONLY, &handle);
-
-		if (esp_err == ESP_OK)
+		// initialize saved_networks, sz and read from NVS
+		sz = sizeof(saved_networks);
+		// if NVS is locked, skip reading from NVS after 1000ms timeout to avoid blocking
+		if (nvs_sync_lock(pdMS_TO_TICKS(1000)))
 		{
-			sz = sizeof(saved_networks);
-			esp_err = nvs_get_blob(handle, "saved_networks", saved_networks, &sz);
+			esp_err = nvs_open(wifi_manager_nvs_namespace, NVS_READONLY, &handle);
 
-			if (esp_err != ESP_OK)
+			if (esp_err == ESP_OK)
 			{
-				ESP_LOGE(TAG, "Error reading saved networks from NVS: %s", esp_err_to_name(esp_err));
-				return false;
-			}
+				esp_err = nvs_get_blob(handle, "saved_networks", saved_networks, &sz);
 
-			for (int i = 0; i < CONFIG_WIFI_MAX_AP_CONFIGS; i++)
-			{
-				if (saved_networks[i].ssid[0] != 0)
+				if (esp_err != ESP_OK)
 				{
-					if (strncmp((char *)ap->ssid, (char *)saved_networks[i].ssid, MAX_SSID_SIZE) == 0)
-					{
-						exists = true;
-						memcpy(&wifi_manager_config_sta->sta.ssid, saved_networks[i].ssid, MAX_SSID_SIZE);
-						memcpy(&wifi_manager_config_sta->sta.password, saved_networks[i].password, MAX_PASSWORD_SIZE);
-						break;
-					}
+					ESP_LOGE(TAG, "Error reading saved networks from NVS: %s", esp_err_to_name(esp_err));
+					sz = 0; // reset size to avoid using invalid data
 				}
+
+				nvs_close(handle);
+			}
+			else
+			{
+				ESP_LOGE(TAG, "Error opening NVS: %s", esp_err_to_name(esp_err));
+				sz = 0; // reset size to avoid using invalid data
 			}
 
-			nvs_close(handle);
+			nvs_sync_unlock();
 		}
+		else
+		{
+			ESP_LOGE(TAG, "Error locking NVS");
+			sz = 0; // reset size to avoid using invalid data	
+		}
+	}
 
-		nvs_sync_unlock();
+	// NVS read failed, return false
+	if (sz == 0) return false;
+
+	// only when nvs read is successful,
+	// check if the AP is in the saved networks
+	for (int i = 0; i < CONFIG_WIFI_MAX_AP_CONFIGS; i++)
+	{
+		if (saved_networks[i].ssid[0] != 0)
+		{
+			if (strncmp((char *)ap->ssid, (char *)saved_networks[i].ssid, MAX_SSID_SIZE) == 0)
+			{
+				exists = true;
+				memcpy(&wifi_manager_config_sta->sta.ssid, saved_networks[i].ssid, MAX_SSID_SIZE);
+				memcpy(&wifi_manager_config_sta->sta.password, saved_networks[i].password, MAX_PASSWORD_SIZE);
+				break;
+			}
+		}
 	}
 
 	return exists;
