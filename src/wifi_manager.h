@@ -197,6 +197,14 @@ extern "C"
  */
 #define WPA2_MINIMUM_PASSWORD_LENGTH 8
 
+/**
+ * @brief Fix for ESP_IDF_6_1 on ESP_IF_WIFI_STA/AP
+ */
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 1)
+#define ESP_IF_WIFI_STA WIFI_IF_STA
+#define ESP_IF_WIFI_AP WIFI_IF_AP
+#endif
+
 	/**
 	 * @brief Defines the complete list of all messages that the wifi_manager can process.
 	 *
