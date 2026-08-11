@@ -2402,8 +2402,8 @@ esp_err_t wifi_manager_update_ap_password(const char *ssid, const char *new_pass
 		{
 			// Found the AP, update its password
 			memset(saved_networks[i].password, 0, sizeof(saved_networks[i].password));
-			strncpy((char *)saved_networks[i].password, new_password, MAX_PASSWORD_SIZE);
-			saved_networks[i].password[MAX_PASSWORD_SIZE] = '\0'; // Ensure null-termination
+			strncpy((char *)saved_networks[i].password, new_password, MAX_PASSWORD_SIZE - 1);
+			saved_networks[i].password[MAX_PASSWORD_SIZE - 1] = '\0'; // Ensure null-termination
 			found = true;
 			ESP_LOGI(TAG, "Updated password for SSID '%s'.", ssid);
 			break;
