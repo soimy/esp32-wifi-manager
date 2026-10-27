@@ -149,6 +149,7 @@ typedef struct
 {
 	ap_config_t entries[CONFIG_WIFI_MAX_AP_CONFIGS];
 	size_t count;
+	bool needs_migration;
 } wifi_manager_saved_networks_t;
 
 /* Saved STA networks cache; invalidated on every NVS write/erase. */
@@ -566,6 +567,7 @@ static esp_err_t wifi_manager_load_saved_networks(wifi_manager_saved_networks_t 
 		esp_err = nvs_get_blob(handle, "saved_networks", saved->entries, &size);
 		if (esp_err == ESP_OK)
 		{
+			saved->needs_migration = wifi_manager_saved_networks_is_legacy(stored_size, sizeof(ap_config_t));
 			saved->count = wifi_manager_saved_networks_load(saved->entries, stored_size,
 								       sizeof(ap_config_t), saved->entries,
 								       sizeof(saved->entries), CONFIG_WIFI_MAX_AP_CONFIGS);
@@ -591,7 +593,7 @@ static esp_err_t wifi_manager_load_saved_networks(wifi_manager_saved_networks_t 
 	return esp_err;
 }
 
-static size_t wifi_manager_saved_networks_count(void)
+static bool wifi_manager_saved_networks_migration_pending(void)
 {
 	if (!wifi_manager_saved_networks_cache_loaded)
 	{
@@ -599,7 +601,8 @@ static size_t wifi_manager_saved_networks_count(void)
 		wifi_manager_saved_networks_cache_loaded = true;
 	}
 
-	return wifi_manager_saved_networks_cache.count;
+	return wifi_manager_saved_networks_cache.needs_migration &&
+	       wifi_manager_saved_networks_cache.count > 0;
 }
 
 static esp_err_t wifi_manager_write_saved_networks(const ap_config_t *entries, size_t count)
@@ -1688,9 +1691,9 @@ void wifi_manager(void *pvParameters)
 					{
 						xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
 						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT);
-						/* A legacy multi-entry blob must collapse once this restore connects; a
-						 * single-entry blob has nothing to migrate. */
-						if (wifi_manager_saved_networks_count() > 1)
+						/* A legacy-layout blob must collapse once this restore connects, even
+						 * when only one of its slots holds a network. */
+						if (wifi_manager_saved_networks_migration_pending())
 						{
 							xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
 						}

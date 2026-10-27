@@ -37,6 +37,11 @@ size_t wifi_manager_saved_networks_load(const void *blob, size_t blob_size,
 	return count;
 }
 
+bool wifi_manager_saved_networks_is_legacy(size_t blob_size, size_t entry_size)
+{
+	return entry_size > 0 && blob_size > entry_size;
+}
+
 bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate)
 {
 	return !dont_save || migrate;
