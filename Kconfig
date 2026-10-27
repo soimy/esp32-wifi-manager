@@ -114,10 +114,12 @@ config DEFAULT_AP_MAX_CONNECTIONS
     Max is 4.
 
 config WIFI_MAX_AP_CONFIGS
-    int "Maximum number of APs that can be saved"
+    int "Number of saved APs to keep"
     default 10
     help
-        Maximum number of APs that can be saved.
+        Number of most recently used APs kept in NVS. The current network is
+        stored first and older entries are kept up to this limit. 1 keeps only
+        the latest network (the previous single-network behavior).
 
 config DEFAULT_AP_BEACON_INTERVAL
     int "Access Point Beacon Interval (ms)"

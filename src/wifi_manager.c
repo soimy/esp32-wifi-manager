@@ -72,6 +72,19 @@ Contains the freeRTOS task and all necessary support
  * to hardcoded access point. */
 #define HARDCODED_CONNECT_DELAY 29000
 
+/** Slots written by firmware before the retention count was configurable. */
+#define WIFI_MANAGER_LEGACY_AP_SLOTS 10
+#if CONFIG_WIFI_MAX_AP_CONFIGS < 1
+#error "CONFIG_WIFI_MAX_AP_CONFIGS must keep at least one saved network"
+#endif
+/* The read buffer must cover old 10-slot blobs even when the configured
+ * retention count is smaller. */
+#if CONFIG_WIFI_MAX_AP_CONFIGS > WIFI_MANAGER_LEGACY_AP_SLOTS
+#define WIFI_MANAGER_SAVED_AP_SLOTS CONFIG_WIFI_MAX_AP_CONFIGS
+#else
+#define WIFI_MANAGER_SAVED_AP_SLOTS WIFI_MANAGER_LEGACY_AP_SLOTS
+#endif
+
 #ifdef CONFIG_USE_RANDOM_AP_PASSWORD
 #include "bootloader_random.h"
 /** Allowed characters in random AP password.
@@ -147,7 +160,7 @@ static char connect_request_password[MAX_PASSWORD_SIZE + 1];
 
 typedef struct
 {
-	ap_config_t entries[CONFIG_WIFI_MAX_AP_CONFIGS];
+	ap_config_t entries[WIFI_MANAGER_SAVED_AP_SLOTS];
 	size_t count;
 	bool needs_migration;
 } wifi_manager_saved_networks_t;
@@ -567,10 +580,12 @@ static esp_err_t wifi_manager_load_saved_networks(wifi_manager_saved_networks_t 
 		esp_err = nvs_get_blob(handle, "saved_networks", saved->entries, &size);
 		if (esp_err == ESP_OK)
 		{
-			saved->needs_migration = wifi_manager_saved_networks_is_legacy(stored_size, sizeof(ap_config_t));
+			saved->needs_migration = wifi_manager_saved_networks_is_legacy(stored_size,
+										      CONFIG_WIFI_MAX_AP_CONFIGS,
+										      sizeof(ap_config_t));
 			saved->count = wifi_manager_saved_networks_load(saved->entries, stored_size,
 								       sizeof(ap_config_t), saved->entries,
-								       sizeof(saved->entries), CONFIG_WIFI_MAX_AP_CONFIGS);
+								       sizeof(saved->entries), WIFI_MANAGER_SAVED_AP_SLOTS);
 			if (saved->count == 0)
 			{
 				esp_err = ESP_ERR_NVS_NOT_FOUND;
@@ -611,7 +626,7 @@ static esp_err_t wifi_manager_write_saved_networks(const ap_config_t *entries, s
 	esp_err_t esp_err;
 	size_t blob_size;
 
-	if (entries == NULL || count == 0 || count > CONFIG_WIFI_MAX_AP_CONFIGS)
+	if (entries == NULL || count == 0 || count > WIFI_MANAGER_SAVED_AP_SLOTS)
 	{
 		return ESP_ERR_INVALID_ARG;
 	}
@@ -719,6 +734,7 @@ bool wifi_manager_saved_wifi_scan(wifi_ap_record_t *ap)
 esp_err_t wifi_manager_save_sta_config()
 {
 	ap_config_t config = {0};
+	wifi_manager_saved_networks_t merged;
 	esp_err_t esp_err;
 
 	// Lock mutex
@@ -727,10 +743,30 @@ esp_err_t wifi_manager_save_sta_config()
 	memcpy(config.ssid, wifi_manager_config_sta->sta.ssid, sizeof(config.ssid));
 	memcpy(config.password, wifi_manager_config_sta->sta.password, sizeof(config.password));
 
-	esp_err = wifi_manager_write_saved_networks(&config, 1);
+	if (!wifi_manager_saved_networks_cache_loaded)
+	{
+		(void)wifi_manager_load_saved_networks(&wifi_manager_saved_networks_cache);
+		wifi_manager_saved_networks_cache_loaded = true;
+	}
+
+	merged.count = wifi_manager_saved_networks_merge(&config,
+							 wifi_manager_saved_networks_cache.entries,
+							 wifi_manager_saved_networks_cache.count,
+							 sizeof(ap_config_t), MAX_SSID_SIZE,
+							 CONFIG_WIFI_MAX_AP_CONFIGS,
+							 merged.entries, sizeof(merged.entries));
+	if (merged.count == 0)
+	{
+		esp_err = ESP_ERR_INVALID_ARG;
+	}
+	else
+	{
+		esp_err = wifi_manager_write_saved_networks(merged.entries, merged.count);
+	}
+
 	if (esp_err == ESP_OK)
 	{
-		ESP_LOGI(TAG, "Saved network %s to NVS", config.ssid);
+		ESP_LOGI(TAG, "Saved %u network(s) to NVS", (unsigned)merged.count);
 	}
 
 	// Unlock mutex
