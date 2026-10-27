@@ -1,6 +1,7 @@
 #ifndef WIFI_MANAGER_SAVED_NETWORKS_H
 #define WIFI_MANAGER_SAVED_NETWORKS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 /**
@@ -25,5 +26,18 @@
 size_t wifi_manager_saved_networks_load(const void *blob, size_t blob_size,
 					size_t entry_size, void *out_entries,
 					size_t out_size, size_t max_entries);
+
+/**
+ * @brief Decides whether a successful connection must write the saved network.
+ *
+ * Normal connections always persist. DONT_SAVE connections (boot restore or an
+ * explicit USER_NO_SAVE request) only persist when a legacy multi-entry blob
+ * must be collapsed after the restore actually connected.
+ *
+ * @param dont_save true when the connection was started with DONT_SAVE set
+ * @param migrate   true when a legacy multi-entry blob must be collapsed
+ * @return true when the connected network should be written to NVS
+ */
+bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate);
 
 #endif /* WIFI_MANAGER_SAVED_NETWORKS_H */
