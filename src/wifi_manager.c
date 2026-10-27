@@ -224,6 +224,9 @@ const int WIFI_MANAGER_REQUEST_DEFERRED_CONNECT = BIT10;
 /* @brief When set, a restored legacy multi-entry config must collapse to one entry after connecting. */
 const int WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT = BIT11;
 
+/* @brief When set, the current connection is a boot restore and may need a recency update. */
+const int WIFI_MANAGER_RESTORE_CONNECTION_BIT = BIT12;
+
 /* Prototypes */
 static void wifi_manager_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
@@ -608,16 +611,54 @@ static esp_err_t wifi_manager_load_saved_networks(wifi_manager_saved_networks_t 
 	return esp_err;
 }
 
+static esp_err_t wifi_manager_ensure_saved_networks_cache(void)
+{
+	esp_err_t esp_err;
+
+	if (wifi_manager_saved_networks_cache_loaded)
+	{
+		return ESP_OK;
+	}
+
+	esp_err = wifi_manager_load_saved_networks(&wifi_manager_saved_networks_cache);
+	if (esp_err == ESP_OK || esp_err == ESP_ERR_NVS_NOT_FOUND)
+	{
+		wifi_manager_saved_networks_cache_loaded = true;
+		return ESP_OK;
+	}
+
+	/* Keep the cache unloaded so a read failure is retried instead of being
+	 * mistaken for an empty list and overwriting existing entries. */
+	return esp_err;
+}
+
 static bool wifi_manager_saved_networks_migration_pending(void)
 {
-	if (!wifi_manager_saved_networks_cache_loaded)
+	if (wifi_manager_ensure_saved_networks_cache() != ESP_OK)
 	{
-		(void)wifi_manager_load_saved_networks(&wifi_manager_saved_networks_cache);
-		wifi_manager_saved_networks_cache_loaded = true;
+		return false;
 	}
 
 	return wifi_manager_saved_networks_cache.needs_migration &&
 	       wifi_manager_saved_networks_cache.count > 0;
+}
+
+static bool wifi_manager_saved_networks_needs_reorder(const char *ssid)
+{
+	if (CONFIG_WIFI_MAX_AP_CONFIGS <= 1)
+	{
+		return false;
+	}
+	if (wifi_manager_ensure_saved_networks_cache() != ESP_OK)
+	{
+		return false;
+	}
+	if (wifi_manager_saved_networks_cache.count == 0)
+	{
+		return true;
+	}
+
+	return strncmp(wifi_manager_saved_networks_cache.entries[0].ssid, ssid, MAX_SSID_SIZE) != 0;
 }
 
 static esp_err_t wifi_manager_write_saved_networks(const ap_config_t *entries, size_t count)
@@ -708,10 +749,9 @@ bool wifi_manager_saved_wifi_scan(wifi_ap_record_t *ap)
 {
 	size_t i;
 
-	if (!wifi_manager_saved_networks_cache_loaded)
+	if (wifi_manager_ensure_saved_networks_cache() != ESP_OK)
 	{
-		(void)wifi_manager_load_saved_networks(&wifi_manager_saved_networks_cache);
-		wifi_manager_saved_networks_cache_loaded = true;
+		return false;
 	}
 
 	for (i = 0; i < wifi_manager_saved_networks_cache.count; i++)
@@ -743,10 +783,12 @@ esp_err_t wifi_manager_save_sta_config()
 	memcpy(config.ssid, wifi_manager_config_sta->sta.ssid, sizeof(config.ssid));
 	memcpy(config.password, wifi_manager_config_sta->sta.password, sizeof(config.password));
 
-	if (!wifi_manager_saved_networks_cache_loaded)
+	esp_err = wifi_manager_ensure_saved_networks_cache();
+	if (esp_err != ESP_OK)
 	{
-		(void)wifi_manager_load_saved_networks(&wifi_manager_saved_networks_cache);
-		wifi_manager_saved_networks_cache_loaded = true;
+		/* A read failure is not an empty list: leave NVS untouched and retry later. */
+		xSemaphoreGive(wifi_manager_json_mutex);
+		return esp_err;
 	}
 
 	merged.count = wifi_manager_saved_networks_merge(&config,
@@ -1698,6 +1740,7 @@ void wifi_manager(void *pvParameters)
 				{
 					/* A user-requested connection supersedes any pending restore migration. */
 					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
+					xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_RESTORE_CONNECTION_BIT);
 					xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_REQUEST_STA_CONNECT_BIT);
 					if ((BaseType_t)msg.param == CONNECTION_REQUEST_USER)
 					{
@@ -1726,7 +1769,10 @@ void wifi_manager(void *pvParameters)
 					if (!(xEventGroupGetBits(wifi_manager_event_group) & WIFI_MANAGER_CONNECT_IN_PROGRESS))
 					{
 						xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
-						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT);
+						xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_RESTORE_CONNECTION_BIT);
+						xEventGroupSetBits(wifi_manager_event_group,
+								   WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT |
+									   WIFI_MANAGER_RESTORE_CONNECTION_BIT);
 						/* A legacy-layout blob must collapse once this restore connects, even
 						 * when only one of its slots holds a network. */
 						if (wifi_manager_saved_networks_migration_pending())
@@ -1929,7 +1975,8 @@ void wifi_manager(void *pvParameters)
 					/* if it was a restore attempt connection, we clear the bits */
 					xEventGroupClearBits(wifi_manager_event_group,
 							     WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT |
-								     WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
+								     WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT |
+								     WIFI_MANAGER_RESTORE_CONNECTION_BIT);
 
 #ifdef CONFIG_WIFI_MANAGER_AUTOSTART_AP
 					/* if the AP is not started, we check if we have reached the threshold of failed attempt to start it */
@@ -2032,19 +2079,27 @@ void wifi_manager(void *pvParameters)
 				wifi_manager_safe_update_sta_ip_string(ip_event_got_ip->ip_info.ip.addr);
 
 				/* Save the connected network unless this was an explicit USER_NO_SAVE
-				 * connection. A restored legacy multi-entry blob is persisted once so
-				 * it collapses to the network that actually connected. */
+				 * connection. A restored legacy blob is collapsed once, and a restore
+				 * with N>1 moves the network that actually connected to the front. */
 				bool dont_save = (uxBits & WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT) != 0;
 				bool migrate = (uxBits & WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT) != 0;
+				bool restore = (uxBits & WIFI_MANAGER_RESTORE_CONNECTION_BIT) != 0;
+				bool reorder = restore &&
+					       wifi_manager_saved_networks_needs_reorder((const char *)wifi_manager_config_sta->sta.ssid);
 
 				xEventGroupClearBits(wifi_manager_event_group,
 						     WIFI_MANAGER_DONT_SAVE_CONNECTION_INFO_BIT |
-							     WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT);
-				if (wifi_manager_saved_networks_should_persist(dont_save, migrate))
+							     WIFI_MANAGER_MIGRATE_SAVED_NETWORKS_BIT |
+							     WIFI_MANAGER_RESTORE_CONNECTION_BIT);
+				if (wifi_manager_saved_networks_should_persist(dont_save, migrate, reorder))
 				{
 					if (migrate)
 					{
 						ESP_LOGI(TAG, "Collapsing legacy saved networks after restore");
+					}
+					if (reorder)
+					{
+						ESP_LOGI(TAG, "Moving restored network to the front");
 					}
 					wifi_manager_save_sta_config();
 				}
