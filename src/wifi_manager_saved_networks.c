@@ -2,30 +2,37 @@
 
 #include <string.h>
 
-bool wifi_manager_saved_networks_pick(const void *blob, size_t blob_size,
-				      size_t entry_size, void *out_entry,
-				      size_t out_size)
+size_t wifi_manager_saved_networks_load(const void *blob, size_t blob_size,
+					size_t entry_size, void *out_entries,
+					size_t out_size, size_t max_entries)
 {
 	const unsigned char *entries = (const unsigned char *)blob;
+	unsigned char *out = (unsigned char *)out_entries;
+	size_t capacity;
+	size_t count = 0;
 	size_t offset;
-	bool found = false;
 
-	if (entries == NULL || out_entry == NULL || entry_size == 0 ||
-	    entry_size > out_size)
+	if (entries == NULL || out == NULL || entry_size == 0)
 	{
-		return false;
+		return 0;
 	}
 
-	/* Legacy blobs are ordered oldest -> newest; keep the newest entry so an
-	 * upgrade does not drop the network the device is currently using. */
-	for (offset = 0; offset + entry_size <= blob_size; offset += entry_size)
+	capacity = out_size / entry_size;
+	if (capacity > max_entries)
+	{
+		capacity = max_entries;
+	}
+
+	for (offset = 0; offset + entry_size <= blob_size && count < capacity;
+	     offset += entry_size)
 	{
 		if (entries[offset] != 0)
 		{
-			memcpy(out_entry, entries + offset, entry_size);
-			found = true;
+			/* memmove: the caller may compact the blob in place */
+			memmove(out + count * entry_size, entries + offset, entry_size);
+			count++;
 		}
 	}
 
-	return found;
+	return count;
 }
