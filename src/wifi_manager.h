@@ -342,6 +342,15 @@ extern "C"
 	esp_err_t wifi_manager_erase_sta_config();
 
 	/**
+	 * @brief Erases the saved STA wifi config for a device reset.
+	 *
+	 * Creates the NVS lock on demand (standalone AP mode never runs
+	 * wifi_manager_init()) and blocks later saved-network writes so a GOT_IP
+	 * callback cannot restore the credentials after the erase.
+	 */
+	esp_err_t wifi_manager_erase_sta_config_for_reset();
+
+	/**
 	 * @brief saves the current STA wifi config to flash ram storage.
 	 */
 	esp_err_t wifi_manager_save_sta_config();

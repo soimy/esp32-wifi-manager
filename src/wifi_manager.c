@@ -113,6 +113,10 @@ TimerHandle_t wifi_manager_shutdown_ap_timer = NULL;
  * started due to an in-progress connection attempt. */
 TimerHandle_t wifi_manager_scan_retry_timer = NULL;
 
+/* 复位擦除后禁止 saved_networks 回写：GOT_IP 可能在擦除释放 NVS 锁之后才拿到锁，
+ * 进而把尚未清除的当前 STA 配置写回 NVS。置位后所有回写都在锁内被拒绝。 */
+static volatile bool s_sta_config_write_blocked = false;
+
 SemaphoreHandle_t wifi_manager_json_mutex = NULL;
 SemaphoreHandle_t wifi_manager_sta_ip_mutex = NULL;
 SemaphoreHandle_t wifi_manager_event_loop_mutex = NULL;
@@ -678,6 +682,15 @@ static esp_err_t wifi_manager_write_saved_networks(const ap_config_t *entries, s
 		return ESP_FAIL;
 	}
 
+	/* 复位擦除可能刚在另一个 task 完成：必须在锁内、写 NVS 之前复查，
+	 * 否则等待锁的回写会把旧凭据重新写回去。 */
+	if (s_sta_config_write_blocked)
+	{
+		nvs_sync_unlock();
+		ESP_LOGW(TAG, "Saved networks write blocked by device reset");
+		return ESP_ERR_INVALID_STATE;
+	}
+
 	esp_err = nvs_open(wifi_manager_nvs_namespace, NVS_READWRITE, &handle);
 	if (esp_err == ESP_OK)
 	{
@@ -743,6 +756,24 @@ esp_err_t wifi_manager_erase_sta_config()
 	}
 
 	return esp_err;
+}
+
+esp_err_t wifi_manager_erase_sta_config_for_reset()
+{
+	esp_err_t esp_err;
+
+	/* 独立 AP 模式不执行 wifi_manager_init()，NVS 锁只在那里创建；
+	 * 这里按需创建，保证任何运行模式下复位都能真正擦掉旧凭据。 */
+	esp_err = nvs_sync_create();
+	if (esp_err != ESP_OK)
+	{
+		ESP_LOGE(TAG, "Failed to create NVS sync mutex");
+		return esp_err;
+	}
+
+	/* 先禁写再擦除：擦除释放 NVS 锁后，等待中的回写会在锁内看到标志并放弃。 */
+	s_sta_config_write_blocked = true;
+	return wifi_manager_erase_sta_config();
 }
 
 bool wifi_manager_saved_wifi_scan(wifi_ap_record_t *ap)
