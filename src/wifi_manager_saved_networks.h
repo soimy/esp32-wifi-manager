@@ -68,14 +68,12 @@ size_t wifi_manager_saved_networks_merge(const void *current,
  *
  * Normal connections always persist. DONT_SAVE connections (boot restore or an
  * explicit USER_NO_SAVE request) only persist when a legacy-format blob must be
- * collapsed or a successful restore must move the current network to the front.
+ * collapsed after a successful restore.
  *
  * @param dont_save true when the connection was started with DONT_SAVE set
  * @param migrate   true when a legacy-format blob must be collapsed
- * @param reorder   true when a successful restore must move the current network first
  * @return true when the connected network should be written to NVS
  */
-bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate,
-						bool reorder);
+bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate);
 
 #endif /* WIFI_MANAGER_SAVED_NETWORKS_H */

@@ -110,8 +110,7 @@ size_t wifi_manager_saved_networks_merge(const void *current,
 	return count;
 }
 
-bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate,
-						bool reorder)
+bool wifi_manager_saved_networks_should_persist(bool dont_save, bool migrate)
 {
-	return !dont_save || migrate || reorder;
+	return !dont_save || migrate;
 }
